@@ -60,6 +60,12 @@ input[type=text],input[type=tel],input[type=password]{ width:100%; padding:14px;
 .bar-fill.max{background:var(--gold-deep);}
 .bar-value{width:26px; text-align:left; font-size:.8rem; font-weight:700;}
 .login-wrap{flex:1; display:flex; align-items:center; justify-content:center; padding:20px;}
+input[type=month]{width:100%; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--paper); color:var(--text); font-family:inherit; font-size:1rem; margin-bottom:4px;}
+textarea{width:100%; padding:14px; font-size:1rem; border-radius:12px; border:1px solid var(--line); background:var(--paper); color:var(--text); margin-bottom:12px; font-family:inherit; resize:vertical; min-height:80px;}
+.dist-table{width:100%; border-collapse:collapse; margin-top:8px;}
+.dist-table td{padding:8px 6px; border-bottom:1px solid var(--line); font-size:.9rem;}
+.dist-table td:last-child{text-align:left; font-weight:800; color:var(--brand);}
+.offer-box{background:var(--paper); border:1px dashed var(--brand); border-radius:12px; padding:12px; margin-bottom:14px;}
 </style>
 </head>
 <body>
@@ -79,6 +85,39 @@ const firebaseConfig = {
 };
 
 const REWARD_EVERY = 3; // كل 3 زيارات، الرابعة مجانية
+
+// ====== WalletWallet — يتصل مباشرة من المتصفح (بدون Cloud Functions) ======
+const WW_API_KEY = "ww_live_0bbff023742852f5ad3a93e5eca84254";
+const WW_BASE = "https://api.walletwallet.dev";
+
+async function getCurrentOfferText(){
+  try{ const snap = await getDoc(doc(firestore,"settings","currentOffer")); return snap.exists() ? (snap.data().text||"") : ""; }
+  catch(e){ return ""; }
+}
+
+async function syncCardToWallet(phone, cardData){
+  const offerText = await getCurrentOfferText();
+  const rem = (cardData.sinceReward||0) % REWARD_EVERY;
+  const body = {
+    title: "مغسلة النون",
+    label: "رقم الجوال",
+    value: phone,
+    barcodeValue: phone,
+    barcodeFormat: "QR",
+    colorPreset: "orange",
+    secondaryFields: [ { label:"الرصيد", value: loyaltyMessage(rem, false) } ]
+  };
+  if(offerText) body.secondaryFields.push({ label:"عرض اليوم", value: offerText });
+
+  if(!cardData.wwSerial){
+    const res = await fetch(`${WW_BASE}/api/passes`, { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${WW_API_KEY}` }, body: JSON.stringify(body) });
+    const data = await res.json();
+    await setDoc(doc(firestore,"cards",phone), { wwSerial: data.serial, wwShareLink: data.shareLink||data.url||data.link, walletAdded:true }, { merge:true });
+  }else{
+    await fetch(`${WW_BASE}/api/passes/${cardData.wwSerial}`, { method:"PUT", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${WW_API_KEY}` }, body: JSON.stringify(body) });
+  }
+}
+// ============================================================================
 const AR_WEEKDAYS = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
 
 const fbApp = initializeApp(firebaseConfig);
@@ -95,6 +134,8 @@ function fmtDate(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.ge
 function monthKey(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1); }
 function startOfWeek(d){ const c=new Date(d.getFullYear(),d.getMonth(),d.getDate()); c.setDate(c.getDate()-c.getDay()); return c; }
 function fmtHour(h){ const period = h<12 ? "ص" : "م"; let hh = h%12; if(hh===0) hh=12; return hh+":00 "+period; }
+const AR_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+function arMonthLabel(mk){ const [y,m] = mk.split("-").map(Number); return AR_MONTHS[m-1]+" "+y; }
 function normalizePhone(raw){ return (raw||"").trim().replace(/[^\d]/g,""); }
 
 function el(html){ const t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstElementChild; }
@@ -257,6 +298,9 @@ function renderWorker(){
         if(sinceReward >= REWARD_EVERY){ isFree = true; sinceReward = 0; }
         await setDoc(cardRef, { phone, total, sinceReward, lastVisit: visitData.ts }, { merge: true });
 
+        try{ await syncCardToWallet(phone, { total, sinceReward, wwSerial: prev.wwSerial }); }
+        catch(e){ console.error("WalletWallet sync failed", e); }
+
         resultBox.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(total, sinceReward, isFree) + customerLinkHtml(phone);
         phoneInput.value = "";
       }catch(e){
@@ -283,13 +327,87 @@ function renderWorker(){
 }
 
 function renderOwner(){
+  const defaultMonthValue = monthKey(new Date());
   const wrap = el(`<div>
     ${topbar("لوحة إحصائيات المالك")}
-    <div class="wrap" id="ownerBody"><p class="muted center">جاري التحميل...</p></div>
+    <div class="wrap">
+      <div class="card">
+        <p class="section-title">إرسال عرض لكل العملاء</p>
+        <div id="currentOfferBox" class="offer-box" style="display:none;">
+          <p class="muted" style="margin:0 0 6px">العرض الحالي المنشور:</p>
+          <p id="currentOfferText" style="margin:0; font-weight:700;"></p>
+        </div>
+        <textarea id="offerInput" placeholder="اكتب عرضك هنا، مثلاً: خصم 20% اليوم من 4 إلى 8 مساءً"></textarea>
+        <button class="big-btn" id="publishOfferBtn">نشر العرض لكل العملاء</button>
+        <div id="offerMsg"></div>
+      </div>
+
+      <div class="card">
+        <label class="field-label">التاريخ</label>
+        <input type="month" id="monthFilter" value="${defaultMonthValue}">
+      </div>
+      <div id="ownerBody"><p class="muted center">جاري التحميل...</p></div>
+    </div>
   </div>`);
   bindLogout(wrap);
   loadOwnerStats(wrap);
+  bindOfferComposer(wrap);
   return wrap;
+}
+
+async function bindOfferComposer(wrap){
+  const offerBox = wrap.querySelector("#currentOfferBox");
+  const offerTextEl = wrap.querySelector("#currentOfferText");
+  const offerInput = wrap.querySelector("#offerInput");
+  const offerMsg = wrap.querySelector("#offerMsg");
+  const btn = wrap.querySelector("#publishOfferBtn");
+
+  try{
+    const snap = await getDoc(doc(firestore,"settings","currentOffer"));
+    if(snap.exists() && snap.data().text){
+      offerBox.style.display = "block";
+      offerTextEl.textContent = snap.data().text;
+      offerInput.value = snap.data().text;
+    }
+  }catch(e){ /* تجاهل، مو حرج */ }
+
+  btn.onclick = async () => {
+    const text = offerInput.value.trim();
+    if(!text){ offerMsg.innerHTML = `<p class="err">اكتب نص العرض أول</p>`; return; }
+    btn.disabled = true; btn.textContent = "جاري النشر...";
+    try{
+      await setDoc(doc(firestore,"settings","currentOffer"), { text, updatedAt: new Date().toISOString() });
+      offerBox.style.display = "block";
+      offerTextEl.textContent = text;
+      offerMsg.innerHTML = `<p class="muted center" style="margin-top:8px">جاري إرسال التحديث لبطاقات العملاء...</p>`;
+
+      const cardsSnap = await getDocs(collection(firestore,"cards"));
+      const withWallet = cardsSnap.docs.filter(d => d.data().wwSerial);
+      let done = 0;
+      await Promise.all(withWallet.map(d => syncCardToWallet(d.id, d.data()).then(()=>done++).catch(e=>console.error("broadcast failed for", d.id, e))));
+
+      offerMsg.innerHTML = `<p class="muted center" style="margin-top:8px">✅ تم النشر — تحدثت ${done} من ${withWallet.length} بطاقة</p>`;
+    }catch(e){
+      offerMsg.innerHTML = `<p class="err">تعذر النشر: ${(e && e.code) || "غير معروف"}</p>`;
+    }
+    btn.disabled = false; btn.textContent = "نشر العرض لكل العملاء";
+  };
+}
+
+function buildDistributionReport(cardsDocs){
+  const buckets = { 0:0, 1:0, 2:0 };
+  cardsDocs.forEach(d => {
+    const v = d.data();
+    const s = (v.sinceReward||0) % REWARD_EVERY;
+    if(buckets[s] !== undefined) buckets[s]++;
+  });
+  return `
+    <table class="dist-table">
+      <tr><td>عملاء بزيارة واحدة</td><td>${buckets[1]}</td></tr>
+      <tr><td>عملاء بزيارتين (غسلتهم الجاية مجانية)</td><td>${buckets[2]}</td></tr>
+      <tr><td>عملاء بلا زيارات حالية (بدأوا من جديد)</td><td>${buckets[0]}</td></tr>
+    </table>
+  `;
 }
 
 async function loadOwnerStats(wrap){
@@ -297,7 +415,7 @@ async function loadOwnerStats(wrap){
   try{
     const now = new Date();
     const todayKey = fmtDate(now);
-    const mKey = monthKey(now);
+    const defaultMonth = monthKey(now);
     const sow = startOfWeek(now);
     const weekKeys = []; for(let i=0;i<7;i++){ const d=new Date(sow); d.setDate(sow.getDate()+i); weekKeys.push(fmtDate(d)); }
     const weekStart = weekKeys[0], weekEnd = weekKeys[6];
@@ -306,33 +424,60 @@ async function loadOwnerStats(wrap){
     const [todaySnap, weekSnap, monthSnap, cardsSnap] = await Promise.all([
       getDocs(query(visitsCol, where("dateKey","==",todayKey))),
       getDocs(query(visitsCol, where("dateKey",">=",weekStart), where("dateKey","<=",weekEnd))),
-      getDocs(query(visitsCol, where("month","==",mKey))),
+      getDocs(query(visitsCol, where("month","==",defaultMonth))),
       getDocs(collection(firestore,"cards"))
     ]);
 
-    const todayCount = todaySnap.size, weekTotal = weekSnap.size, monthTotal = monthSnap.size, totalCards = cardsSnap.size;
-    const weekdayCounts = [0,0,0,0,0,0,0]; const hourCounts = new Array(24).fill(0);
-    monthSnap.docs.forEach(d => { const v=d.data(); if(typeof v.weekday==="number") weekdayCounts[v.weekday]++; if(typeof v.hour==="number") hourCounts[v.hour]++; });
-    const maxWeekday = Math.max(1, ...weekdayCounts);
-    let weekdayRows = "";
-    weekdayCounts.forEach((c,i) => { const pct=Math.round((c/maxWeekday)*100); weekdayRows += `<div class="bar-row"><span class="bar-label">${AR_WEEKDAYS[i]}</span><div class="bar-track"><div class="bar-fill ${c===maxWeekday&&c>0?"max":""}" style="width:${pct}%"></div></div><span class="bar-value">${c}</span></div>`; });
-    const topHours = hourCounts.map((c,h)=>({h,c})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c).slice(0,5);
-    const maxHour = topHours.length?topHours[0].c:1;
-    let hourRows = topHours.length ? "" : `<p class="muted center">لا توجد بيانات كافية لهذا الشهر</p>`;
-    topHours.forEach((x,i)=>{ const pct=Math.round((x.c/maxHour)*100); hourRows += `<div class="bar-row"><span class="bar-label">${fmtHour(x.h)}</span><div class="bar-track"><div class="bar-fill ${i===0?"max":""}" style="width:${pct}%"></div></div><span class="bar-value">${x.c}</span></div>`; });
+    const todayCount = todaySnap.size, weekTotal = weekSnap.size, totalCards = cardsSnap.size;
+    const distributionHtml = buildDistributionReport(cardsSnap.docs);
+    const monthCache = { [defaultMonth]: monthSnap.docs };
+    let currentMonth = defaultMonth;
 
-    body.innerHTML = `
-      <div class="card">
-        <div class="stats-grid">
-          <div class="stat-box"><div class="stat-num">${todayCount}</div><div class="stat-label">اليوم</div></div>
-          <div class="stat-box"><div class="stat-num">${weekTotal}</div><div class="stat-label">هذا الأسبوع</div></div>
-          <div class="stat-box"><div class="stat-num">${monthTotal}</div><div class="stat-label">هذا الشهر</div></div>
+    const renderMonthPart = () => {
+      const docs = monthCache[currentMonth] || [];
+      const monthTotal = docs.length;
+      const weekdayCounts = [0,0,0,0,0,0,0]; const hourCounts = new Array(24).fill(0);
+      docs.forEach(d => { const v=d.data(); if(typeof v.weekday==="number") weekdayCounts[v.weekday]++; if(typeof v.hour==="number") hourCounts[v.hour]++; });
+      const maxWeekday = Math.max(1, ...weekdayCounts);
+      let weekdayRows = "";
+      weekdayCounts.forEach((c,i) => { const pct=Math.round((c/maxWeekday)*100); weekdayRows += `<div class="bar-row"><span class="bar-label">${AR_WEEKDAYS[i]}</span><div class="bar-track"><div class="bar-fill ${c===maxWeekday&&c>0?"max":""}" style="width:${pct}%"></div></div><span class="bar-value">${c}</span></div>`; });
+      const topHours = hourCounts.map((c,h)=>({h,c})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c).slice(0,5);
+      const maxHour = topHours.length?topHours[0].c:1;
+      let hourRows = topHours.length ? "" : `<p class="muted center">لا توجد بيانات كافية لهذا الشهر</p>`;
+      topHours.forEach((x,i)=>{ const pct=Math.round((x.c/maxHour)*100); hourRows += `<div class="bar-row"><span class="bar-label">${fmtHour(x.h)}</span><div class="bar-track"><div class="bar-fill ${i===0?"max":""}" style="width:${pct}%"></div></div><span class="bar-value">${x.c}</span></div>`; });
+      const monthLabel = arMonthLabel(currentMonth);
+
+      body.innerHTML = `
+        <div class="card">
+          <p class="section-title">التقرير اليومي (يتصفر كل يوم فجرًا)</p>
+          <div class="stats-grid">
+            <div class="stat-box"><div class="stat-num">${todayCount}</div><div class="stat-label">اليوم</div></div>
+            <div class="stat-box"><div class="stat-num">${weekTotal}</div><div class="stat-label">هذا الأسبوع</div></div>
+            <div class="stat-box"><div class="stat-num">${monthTotal}</div><div class="stat-label">${monthLabel}</div></div>
+          </div>
+          <p class="muted center" style="margin:8px 0 0">عدد العملاء المسجلين في نظام الولاء: ${totalCards}</p>
         </div>
-        <p class="muted center" style="margin:8px 0 0">عدد العملاء المسجلين في نظام الولاء: ${totalCards}</p>
-      </div>
-      <div class="card"><p class="section-title">الأيام الأكثر ازدحامًا (هذا الشهر)</p>${weekdayRows}</div>
-      <div class="card"><p class="section-title">أكثر 5 ساعات ازدحامًا (هذا الشهر)</p>${hourRows}</div>
-    `;
+        <div class="card">
+          <p class="section-title">توزيع العملاء حسب عدد الزيارات</p>
+          ${distributionHtml}
+        </div>
+        <div class="card"><p class="section-title">الأيام الأكثر ازدحامًا (${monthLabel})</p>${weekdayRows}</div>
+        <div class="card"><p class="section-title">أكثر 5 ساعات ازدحامًا (${monthLabel})</p>${hourRows}</div>
+      `;
+    };
+    renderMonthPart();
+
+    wrap.querySelector("#monthFilter").onchange = async (e) => {
+      const mk = e.target.value;
+      if(!mk) return;
+      currentMonth = mk;
+      if(!monthCache[mk]){
+        body.innerHTML = `<p class="muted center">جاري تحميل بيانات ${arMonthLabel(mk)}...</p>`;
+        const snap = await getDocs(query(visitsCol, where("month","==",mk)));
+        monthCache[mk] = snap.docs;
+      }
+      renderMonthPart();
+    };
   }catch(e){
     body.innerHTML = `<p class="err">تعذر تحميل الإحصائيات: ${(e && e.code) || "غير معروف"}</p>`;
   }
