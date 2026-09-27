@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>مغسلة النون</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9A%97%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#fdf4ec; --surface:#ffffff; --line:#f0ddc8;
+  --text:#3a2416; --muted:#8a7160;
+  --brand:#e2751e; --brand-deep:#b95c14;
+  --gold:#f2b705; --gold-deep:#c98f02;
+  --danger:#c8412f;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#20140c; --surface:#2e1c11; --line:#4a3220;
+    --text:#f6ece0; --muted:#c2a98f;
+    --brand:#f28c3e; --brand-deep:#d9701f;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{ margin:0; background:var(--paper); color:var(--text); font-family:'Cairo','Tahoma',sans-serif; display:flex; justify-content:center; }
+#app{width:100%; max-width:520px; min-height:100%; display:flex; flex-direction:column;}
+.topbar{ position:sticky; top:0; z-index:5; padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 14px; background:var(--brand); color:#fff; display:flex; align-items:center; justify-content:space-between; }
+.topbar h2{margin:0; font-size:1.05rem; font-weight:800;}
+.topbar button{ background:rgba(255,255,255,.18); color:#fff; border:none; border-radius:9px; padding:8px 12px; font-size:.82rem; cursor:pointer; font-family:inherit; }
+.wrap{padding:18px 16px 40px; flex:1;}
+.card{ background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:20px; margin-bottom:16px; }
+.field-label{display:block; font-size:.85rem; color:var(--muted); margin:2px 0 8px; font-weight:600;}
+input[type=text],input[type=tel],input[type=password]{ width:100%; padding:14px; font-size:1.1rem; border-radius:12px; border:1px solid var(--line); background:var(--paper); color:var(--text); margin-bottom:16px; text-align:center; font-family:inherit; }
+.big-btn{ display:block; width:100%; padding:16px; border:none; border-radius:13px; background:var(--brand); color:#fff; font-size:1.02rem; font-weight:700; cursor:pointer; font-family:inherit; }
+.btn-secondary{flex:1; padding:16px; border:1px solid var(--line); background:var(--paper); color:var(--text); border-radius:13px; font-weight:700; cursor:pointer; font-family:inherit; font-size:1rem;}
+.confirm-row{display:flex; gap:8px; margin-top:12px;}
+.center{text-align:center}
+.muted{color:var(--muted); font-size:.85rem;}
+.err{color:var(--danger); font-size:.9rem; margin-top:8px;}
+.phone-display{font-size:1.3rem; font-weight:800; text-align:center; margin-bottom:4px; direction:ltr;}
+.dots{display:flex; gap:8px; justify-content:center; margin:14px 0;}
+.dot{width:26px; height:26px; border-radius:50%; background:var(--line); display:flex; align-items:center; justify-content:center; font-size:.78rem; color:var(--muted);}
+.dot.filled{background:var(--brand); color:#fff;}
+.free{ background:linear-gradient(135deg,var(--gold),var(--gold-deep)); color:#231a00; padding:14px; border-radius:12px; text-align:center; font-weight:800; margin-top:12px; }
+.stats-grid{display:flex; gap:10px; margin-bottom:6px;}
+.stat-box{flex:1; background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:12px 6px; text-align:center;}
+.stat-num{font-size:1.35rem; font-weight:800; color:var(--brand);}
+.stat-label{font-size:.76rem; color:var(--muted); margin-top:2px;}
+.section-title{font-size:.95rem; font-weight:800; margin:4px 0 12px;}
+.bar-row{display:flex; align-items:center; gap:8px; margin-bottom:9px;}
+.bar-label{width:64px; font-size:.82rem; color:var(--muted); flex-shrink:0;}
+.bar-track{flex:1; height:14px; background:var(--paper); border-radius:7px; overflow:hidden;}
+.bar-fill{height:100%; background:var(--brand); border-radius:7px;}
+.bar-fill.max{background:var(--gold-deep);}
+.bar-value{width:26px; text-align:left; font-size:.8rem; font-weight:700;}
+.login-wrap{flex:1; display:flex; align-items:center; justify-content:center; padding:20px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, addDoc, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, signInAnonymously, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBpwwrT91fDMNRp6zEi4bzsQ9QhKPs_W1c",
+  authDomain: "alnoon-88e59.firebaseapp.com",
+  projectId: "alnoon-88e59",
+  storageBucket: "alnoon-88e59.firebasestorage.app",
+  messagingSenderId: "549238575382",
+  appId: "1:549238575382:web:9c511a244ef24f4fc90037"
+};
+
+const REWARD_EVERY = 3; // كل 3 زيارات، الرابعة مجانية
+const AR_WEEKDAYS = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
+
+const fbApp = initializeApp(firebaseConfig);
+const firestore = getFirestore(fbApp);
+const auth = getAuth(fbApp);
+
+async function getStaffInfo(uid){
+  try{ const snap = await getDoc(doc(firestore,"staff",uid)); return snap.exists() ? snap.data() : null; }
+  catch(e){ return null; }
+}
+
+function pad(n){ return n<10 ? "0"+n : ""+n; }
+function fmtDate(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+function monthKey(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1); }
+function startOfWeek(d){ const c=new Date(d.getFullYear(),d.getMonth(),d.getDate()); c.setDate(c.getDate()-c.getDay()); return c; }
+function fmtHour(h){ const period = h<12 ? "ص" : "م"; let hh = h%12; if(hh===0) hh=12; return hh+":00 "+period; }
+function normalizePhone(raw){ return (raw||"").trim().replace(/[^\d]/g,""); }
+
+function el(html){ const t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstElementChild; }
+
+function topbar(title, badge){
+  return `<div class="topbar"><div><h2>${title}</h2>${badge?`<div style="font-size:.78rem;opacity:.9">${badge}</div>`:""}</div><button id="logoutBtn">خروج</button></div>`;
+}
+function bindLogout(wrap){ const b=wrap.querySelector("#logoutBtn"); if(b) b.onclick=()=>signOut(auth); }
+
+function render(){
+  const app = document.getElementById("app");
+  app.innerHTML = `<div class="login-wrap"><p class="muted center">جاري التحقق من الدخول...</p></div>`;
+  onAuthStateChanged(auth, async (user) => {
+    app.innerHTML = "";
+    if(!user){ app.appendChild(renderLogin()); return; }
+    const staff = await getStaffInfo(user.uid);
+    if(!staff){
+      app.appendChild(el(`<div class="login-wrap"><div class="card center">
+        <p class="err">حسابك ما له صلاحية بعد. تواصل مع المسؤول.</p>
+        <button class="big-btn" id="signOutBtn">خروج</button>
+      </div></div>`));
+      document.getElementById("signOutBtn").onclick = () => signOut(auth);
+      return;
+    }
+    if(staff.role === "owner") app.appendChild(renderOwner());
+    else app.appendChild(renderWorker());
+  });
+}
+
+function renderLogin(){
+  const wrap = el(`<div class="login-wrap">
+    <div class="card" style="width:100%">
+      <h2 class="center" style="margin-top:0">🚗 مغسلة النون</h2>
+      <label class="field-label">البريد الإلكتروني</label>
+      <input type="text" id="email" placeholder="البريد الإلكتروني الخاص بحسابك" autocomplete="username">
+      <label class="field-label">كلمة المرور</label>
+      <input type="password" id="pw" placeholder="كلمة المرور" autocomplete="current-password">
+      <button class="big-btn" id="loginBtn">دخول</button>
+      <div id="loginErr"></div>
+    </div>
+  </div>`);
+  const doLogin = async () => {
+    const email = wrap.querySelector("#email").value.trim();
+    const pw = wrap.querySelector("#pw").value;
+    const errBox = wrap.querySelector("#loginErr");
+    const btn = wrap.querySelector("#loginBtn");
+    if(!email || !pw){ errBox.innerHTML = `<p class="err center">أدخل البريد وكلمة المرور</p>`; return; }
+    btn.disabled = true; btn.textContent = "جاري الدخول...";
+    try{ await signInWithEmailAndPassword(auth, email, pw); }
+    catch(e){ errBox.innerHTML = `<p class="err center">بيانات الدخول غير صحيحة</p>`; btn.disabled=false; btn.textContent="دخول"; }
+  };
+  wrap.querySelector("#loginBtn").onclick = doLogin;
+  wrap.querySelector("#pw").addEventListener("keydown", e => { if(e.key==="Enter") doLogin(); });
+  return wrap;
+}
+
+function loyaltyMessage(sinceReward, isFree){
+  const remaining = isFree ? 0 : (REWARD_EVERY - sinceReward);
+  if(isFree) return `🎉 مبروك! هذي الغسلة مجانية`;
+  if(remaining === 1) return `ثلاثة زيارات والرابعة مجانًا - متبقي زيارة واحدة لمكافأتك`;
+  if(remaining === 2) return `ثلاثة زيارات والرابعة مجانًا - متبقي زيارتين لمكافأتك`;
+  return `ثلاثة زيارات والرابعة مجانًا - متبقي ${remaining} زيارات لمكافأتك`;
+}
+
+function cardStatusHtml(total, sinceReward, isFree){
+  let dotsHtml = "";
+  const filled = isFree ? REWARD_EVERY : sinceReward;
+  for(let i=1;i<=REWARD_EVERY;i++) dotsHtml += `<div class="dot ${i<=filled?"filled":""}">${i}</div>`;
+  return `
+    <p class="center muted">إجمالي الزيارات: ${total}</p>
+    <div class="dots">${dotsHtml}</div>
+    ${isFree ? `<div class="free">${loyaltyMessage(sinceReward,true)}</div>` : `<p class="center muted">${loyaltyMessage(sinceReward,false)}</p>`}
+  `;
+}
+
+function customerLinkHtml(phone){
+  const link = location.origin + location.pathname + "?phone=" + encodeURIComponent(phone);
+  const qrImg = "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=" + encodeURIComponent(link);
+  return `
+    <div class="card" style="margin-top:12px; text-align:center;">
+      <p class="section-title" style="text-align:center">رابط رصيد العميل</p>
+      <img src="${qrImg}" alt="QR" style="width:180px; height:180px; margin:0 auto; display:block;">
+      <p class="muted" style="margin-top:8px">اطلب من العميل يصوّر هذا الرمز، وبعدها يحفظ الصفحة كاختصار بجواله</p>
+    </div>
+  `;
+}
+
+async function renderCustomerView(phone){
+  const app = document.getElementById("app");
+  app.innerHTML = `<div class="login-wrap"><div class="card center" style="width:100%"><p class="muted center">جاري التحميل...</p></div></div>`;
+  const box = document.querySelector("#app .card");
+  try{
+    if(!auth.currentUser){ await signInAnonymously(auth); }
+    const snap = await getDoc(doc(firestore,"cards",phone));
+    if(!snap.exists()){
+      box.innerHTML = `<h2 class="center" style="margin-top:0">🚗 مغسلة النون</h2><p class="muted center">ما فيه سجل لهذا الرقم بعد.</p>`;
+    }else{
+      const d = snap.data();
+      box.innerHTML = `<h2 class="center" style="margin-top:0">🚗 مغسلة النون</h2><div class="phone-display">${phone}</div>` + cardStatusHtml(d.total||0, d.sinceReward||0, false);
+    }
+  }catch(e){
+    box.innerHTML = `<p class="err center">تعذر تحميل بيانات البطاقة</p>`;
+  }
+}
+
+function renderWorker(){
+  const wrap = el(`<div>
+    ${topbar("تسجيل غسلة")}
+    <div class="wrap">
+      <div class="card">
+        <label class="field-label">رقم جوال العميل</label>
+        <input type="tel" id="phone" placeholder="05XXXXXXXX" autocomplete="off">
+        <button class="big-btn" id="submit">تسجيل الغسلة</button>
+        <div id="confirmArea"></div>
+        <div id="result"></div>
+      </div>
+      <div class="card">
+        <p class="section-title">استعلام عن عميل (بدون تسجيل غسلة جديدة)</p>
+        <input type="tel" id="lookupPhone" placeholder="05XXXXXXXX" autocomplete="off">
+        <button class="big-btn" id="lookupBtn">استعلام</button>
+        <div id="lookupResult"></div>
+      </div>
+    </div>
+  </div>`);
+  bindLogout(wrap);
+
+  const btn = wrap.querySelector("#submit");
+  const confirmArea = wrap.querySelector("#confirmArea");
+  const resultBox = wrap.querySelector("#result");
+  const phoneInput = wrap.querySelector("#phone");
+
+  btn.onclick = () => {
+    const phone = normalizePhone(phoneInput.value);
+    if(!phone){ resultBox.innerHTML = `<p class="err">أدخل رقم الجوال</p>`; return; }
+    resultBox.innerHTML = "";
+    confirmArea.innerHTML = `
+      <div class="card" style="background:var(--paper); margin-top:12px;">
+        <p class="center muted" style="margin-top:0">تأكيد قبل التسجيل</p>
+        <div class="phone-display">${phone}</div>
+        <div class="confirm-row">
+          <button class="big-btn" id="confirmYes" style="flex:1">تأكيد وتسجيل</button>
+          <button class="btn-secondary" id="confirmNo">تعديل</button>
+        </div>
+      </div>`;
+    wrap.querySelector("#confirmNo").onclick = () => { confirmArea.innerHTML = ""; };
+    wrap.querySelector("#confirmYes").onclick = async () => {
+      const yesBtn = wrap.querySelector("#confirmYes");
+      yesBtn.disabled = true; yesBtn.textContent = "جاري التسجيل...";
+      try{
+        const now = new Date();
+        const visitData = { phone, dateKey: fmtDate(now), month: monthKey(now), weekday: now.getDay(), hour: now.getHours(), ts: now.toISOString() };
+        await addDoc(collection(firestore,"visits"), visitData);
+
+        const cardRef = doc(firestore,"cards",phone);
+        const snap = await getDoc(cardRef);
+        const prev = snap.exists() ? snap.data() : {};
+        let total = (prev.total||0)+1;
+        let sinceReward = (prev.sinceReward||0)+1;
+        let isFree = false;
+        if(sinceReward >= REWARD_EVERY){ isFree = true; sinceReward = 0; }
+        await setDoc(cardRef, { phone, total, sinceReward, lastVisit: visitData.ts }, { merge: true });
+
+        resultBox.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(total, sinceReward, isFree) + customerLinkHtml(phone);
+        phoneInput.value = "";
+      }catch(e){
+        resultBox.innerHTML = `<p class="err">حدث خطأ أثناء التسجيل: ${(e && e.code) || "غير معروف"}</p>`;
+      }
+      confirmArea.innerHTML = "";
+    };
+  };
+
+  const lookupBtn = wrap.querySelector("#lookupBtn");
+  const lookupResult = wrap.querySelector("#lookupResult");
+  lookupBtn.onclick = async () => {
+    const phone = normalizePhone(wrap.querySelector("#lookupPhone").value);
+    if(!phone){ lookupResult.innerHTML = `<p class="err">أدخل رقم الجوال</p>`; return; }
+    lookupBtn.disabled = true; lookupBtn.textContent = "جاري البحث...";
+    try{
+      const snap = await getDoc(doc(firestore,"cards",phone));
+      if(!snap.exists()){ lookupResult.innerHTML = `<p class="muted center">ما فيه سجل لهذا الرقم بعد.</p>`; }
+      else{ const d = snap.data(); lookupResult.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(d.total||0, d.sinceReward||0, false); }
+    }catch(e){ lookupResult.innerHTML = `<p class="err">تعذر البحث</p>`; }
+    lookupBtn.disabled = false; lookupBtn.textContent = "استعلام";
+  };
+  return wrap;
+}
+
+function renderOwner(){
+  const wrap = el(`<div>
+    ${topbar("لوحة إحصائيات المالك")}
+    <div class="wrap" id="ownerBody"><p class="muted center">جاري التحميل...</p></div>
+  </div>`);
+  bindLogout(wrap);
+  loadOwnerStats(wrap);
+  return wrap;
+}
+
+async function loadOwnerStats(wrap){
+  const body = wrap.querySelector("#ownerBody");
+  try{
+    const now = new Date();
+    const todayKey = fmtDate(now);
+    const mKey = monthKey(now);
+    const sow = startOfWeek(now);
+    const weekKeys = []; for(let i=0;i<7;i++){ const d=new Date(sow); d.setDate(sow.getDate()+i); weekKeys.push(fmtDate(d)); }
+    const weekStart = weekKeys[0], weekEnd = weekKeys[6];
+
+    const visitsCol = collection(firestore,"visits");
+    const [todaySnap, weekSnap, monthSnap, cardsSnap] = await Promise.all([
+      getDocs(query(visitsCol, where("dateKey","==",todayKey))),
+      getDocs(query(visitsCol, where("dateKey",">=",weekStart), where("dateKey","<=",weekEnd))),
+      getDocs(query(visitsCol, where("month","==",mKey))),
+      getDocs(collection(firestore,"cards"))
+    ]);
+
+    const todayCount = todaySnap.size, weekTotal = weekSnap.size, monthTotal = monthSnap.size, totalCards = cardsSnap.size;
+    const weekdayCounts = [0,0,0,0,0,0,0]; const hourCounts = new Array(24).fill(0);
+    monthSnap.docs.forEach(d => { const v=d.data(); if(typeof v.weekday==="number") weekdayCounts[v.weekday]++; if(typeof v.hour==="number") hourCounts[v.hour]++; });
+    const maxWeekday = Math.max(1, ...weekdayCounts);
+    let weekdayRows = "";
+    weekdayCounts.forEach((c,i) => { const pct=Math.round((c/maxWeekday)*100); weekdayRows += `<div class="bar-row"><span class="bar-label">${AR_WEEKDAYS[i]}</span><div class="bar-track"><div class="bar-fill ${c===maxWeekday&&c>0?"max":""}" style="width:${pct}%"></div></div><span class="bar-value">${c}</span></div>`; });
+    const topHours = hourCounts.map((c,h)=>({h,c})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c).slice(0,5);
+    const maxHour = topHours.length?topHours[0].c:1;
+    let hourRows = topHours.length ? "" : `<p class="muted center">لا توجد بيانات كافية لهذا الشهر</p>`;
+    topHours.forEach((x,i)=>{ const pct=Math.round((x.c/maxHour)*100); hourRows += `<div class="bar-row"><span class="bar-label">${fmtHour(x.h)}</span><div class="bar-track"><div class="bar-fill ${i===0?"max":""}" style="width:${pct}%"></div></div><span class="bar-value">${x.c}</span></div>`; });
+
+    body.innerHTML = `
+      <div class="card">
+        <div class="stats-grid">
+          <div class="stat-box"><div class="stat-num">${todayCount}</div><div class="stat-label">اليوم</div></div>
+          <div class="stat-box"><div class="stat-num">${weekTotal}</div><div class="stat-label">هذا الأسبوع</div></div>
+          <div class="stat-box"><div class="stat-num">${monthTotal}</div><div class="stat-label">هذا الشهر</div></div>
+        </div>
+        <p class="muted center" style="margin:8px 0 0">عدد العملاء المسجلين في نظام الولاء: ${totalCards}</p>
+      </div>
+      <div class="card"><p class="section-title">الأيام الأكثر ازدحامًا (هذا الشهر)</p>${weekdayRows}</div>
+      <div class="card"><p class="section-title">أكثر 5 ساعات ازدحامًا (هذا الشهر)</p>${hourRows}</div>
+    `;
+  }catch(e){
+    body.innerHTML = `<p class="err">تعذر تحميل الإحصائيات: ${(e && e.code) || "غير معروف"}</p>`;
+  }
+}
+
+const _publicPhone = new URLSearchParams(location.search).get("phone");
+if(_publicPhone){ renderCustomerView(normalizePhone(_publicPhone)); } else { render(); }
+</script>
+</body>
+</html>
