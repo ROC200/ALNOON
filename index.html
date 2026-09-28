@@ -80,7 +80,7 @@ input[type=date]{width:100%; padding:12px; border-radius:12px; border:1px solid 
 <div id="app"></div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, addDoc, deleteDoc, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signInAnonymously, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 
 const firebaseConfig = {
@@ -485,12 +485,61 @@ function renderOwner(){
         <div class="date-row" id="monthFilter">${monthSelectsHtml(defaultMonthValue)}</div>
       </div>
       <div id="ownerBody"><p class="muted center">جاري التحميل...</p></div>
+
+      <div class="card">
+        <p class="section-title">حذف العملاء غير النشطين</p>
+        <p class="muted" style="margin-top:0">يحذف بطاقات العملاء اللي ما زاروا من فترة، عشان ما توصلهم العروض. سجل الغسلات والإحصائيات ما تتأثر.</p>
+        <label class="field-label">ما زاروا من</label>
+        <div class="seg" id="inactiveSeg" style="display:flex; gap:8px; margin-bottom:12px;">
+          <button class="seg-btn" data-v="3">3 شهور</button>
+          <button class="seg-btn active" data-v="6">6 شهور</button>
+          <button class="seg-btn" data-v="12">سنة</button>
+        </div>
+        <button class="btn-secondary" id="findInactiveBtn" style="width:100%">بحث</button>
+        <div id="inactiveResult"></div>
+      </div>
     </div>
   </div>`);
   bindLogout(wrap);
   loadOwnerStats(wrap);
   bindOfferComposer(wrap);
+  bindInactiveCleanup(wrap);
   return wrap;
+}
+
+function bindInactiveCleanup(wrap){
+  const seg = wrap.querySelector("#inactiveSeg");
+  seg.querySelectorAll(".seg-btn").forEach(b => {
+    b.onclick = () => { seg.querySelectorAll(".seg-btn").forEach(x=>x.classList.remove("active")); b.classList.add("active"); wrap.querySelector("#inactiveResult").innerHTML = ""; };
+  });
+  const findBtn = wrap.querySelector("#findInactiveBtn");
+  const out = wrap.querySelector("#inactiveResult");
+  findBtn.onclick = async () => {
+    const months = Number(seg.querySelector(".seg-btn.active").dataset.v);
+    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - months);
+    findBtn.disabled = true; findBtn.textContent = "جاري البحث...";
+    try{
+      const cardsSnap = await getDocs(collection(firestore,"cards"));
+      const inactive = cardsSnap.docs.filter(d => { const lv = d.data().lastVisit; return !lv || new Date(lv) < cutoff; });
+      if(!inactive.length){ out.innerHTML = `<p class="muted center" style="margin-top:10px">ما فيه عملاء غير نشطين ✅</p>`; }
+      else{
+        out.innerHTML = `
+          <p class="center" style="margin:12px 0 4px; font-weight:800;">${inactive.length} عميل ما زاروا من ${months===12 ? "سنة" : months+" شهور"}</p>
+          <details><summary class="muted" style="cursor:pointer">عرض الأرقام</summary><div class="customer-list">${inactive.map(d=>`<div>${d.id}</div>`).join("")}</div></details>
+          <button class="big-btn" id="deleteInactiveBtn" style="margin-top:12px; background:var(--danger)">حذف ${inactive.length} عميل</button>
+          <div id="deleteInactiveMsg"></div>`;
+        const delBtn = out.querySelector("#deleteInactiveBtn");
+        delBtn.onclick = async () => {
+          if(!confirm(`متأكد تحذف ${inactive.length} عميل؟ ما تقدر ترجعهم.`)) return;
+          delBtn.disabled = true; delBtn.textContent = "جاري الحذف...";
+          let done = 0, failed = 0;
+          await Promise.all(inactive.map(d => deleteDoc(doc(firestore,"cards",d.id)).then(()=>done++).catch(e=>{ console.error("delete failed", d.id, e); failed++; })));
+          out.innerHTML = `<p class="muted center" style="margin-top:10px">${failed ? "⚠️" : "✅"} انحذف ${done} عميل${failed ? ` — وفشل ${failed} (تأكد من صلاحيات Firestore)` : ""}</p>`;
+        };
+      }
+    }catch(e){ out.innerHTML = `<p class="err center">تعذر البحث: ${(e && e.code) || "غير معروف"}</p>`; }
+    findBtn.disabled = false; findBtn.textContent = "بحث";
+  };
 }
 
 async function bindOfferComposer(wrap){
