@@ -98,8 +98,9 @@ const REWARD_EVERY = 3; // كل 3 زيارات، الرابعة مجانية
 const WW_API_KEY = "ww_live_0bbff023742852f5ad3a93e5eca84254";
 const WW_BASE = "https://api.walletwallet.dev";
 const STORE_MAPS_URL = "https://maps.app.goo.gl/WS8JH4buvnsDgY8fA";
-// أيقونة الإشعار (برتقالي وحرف ن أبيض) — ملف icon.png جنب هذي الصفحة. الصور تحتاج باقة Pro في WalletWallet، فعّلها بعد الاشتراك.
-const USE_BRAND_ICON = false;
+// أيقونة الإشعار (برتقالي وحرف ن أبيض) — ملف icon.png جنب هذي الصفحة.
+// الصور من ميزات Pro في WalletWallet؛ لو رفضها الحساب، البطاقة تنرسل بدون الأيقونة تلقائيًا.
+const USE_BRAND_ICON = true;
 const BRAND_ICON_URL = new URL("icon.png", location.href).href;
 
 async function getCurrentOfferText(){
@@ -134,8 +135,17 @@ async function syncCardToWallet(phone, cardData){
   if(USE_BRAND_ICON) body.iconURL = BRAND_ICON_URL;
 
   const headers = { "Content-Type":"application/json", "Authorization":`Bearer ${WW_API_KEY}` };
+  // يرسل الطلب، ولو فشل بسبب الأيقونة (مثلاً انتهت التجربة) يعيده بدونها
+  const send = async (url, method) => {
+    let res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+    if(!res.ok && body.iconURL){
+      delete body.iconURL;
+      res = await fetch(url, { method, headers, body: JSON.stringify(body) });
+    }
+    return res;
+  };
   if(!cardData.wwSerial){
-    const res = await fetch(`${WW_BASE}/api/passes`, { method:"POST", headers, body: JSON.stringify(body) });
+    const res = await send(`${WW_BASE}/api/passes`, "POST");
     const data = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(`WalletWallet ${res.status}: ${data.error || data.message || JSON.stringify(data)}`);
     // WalletWallet يرجّع serialNumber و shareUrl (مو serial / shareLink)
@@ -145,7 +155,7 @@ async function syncCardToWallet(phone, cardData){
     await setDoc(doc(firestore,"cards",phone), { wwSerial: serial, wwShareLink: shareLink, walletAdded:true }, { merge:true });
     return shareLink;
   }else{
-    const res = await fetch(`${WW_BASE}/api/passes/${cardData.wwSerial}`, { method:"PUT", headers, body: JSON.stringify(body) });
+    const res = await send(`${WW_BASE}/api/passes/${cardData.wwSerial}`, "PUT");
     const data = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(`WalletWallet ${res.status}: ${data.error || data.message || JSON.stringify(data)}`);
     return data.shareUrl || cardData.wwShareLink || `${WW_BASE}/p/${cardData.wwSerial}`;
