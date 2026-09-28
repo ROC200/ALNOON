@@ -46,7 +46,8 @@ input[type=text],input[type=tel],input[type=password]{ width:100%; padding:14px;
 .phone-display{font-size:1.3rem; font-weight:800; text-align:center; margin-bottom:4px; direction:ltr;}
 .dots{display:flex; gap:8px; justify-content:center; margin:14px 0;}
 .dot{width:26px; height:26px; border-radius:50%; background:var(--line); display:flex; align-items:center; justify-content:center; font-size:.78rem; color:var(--muted);}
-.dot.filled{background:var(--brand); color:#fff;}
+.dot.filled{background:var(--brand); color:#fff; font-size:1rem; font-weight:800;}
+.dot.gift{background:linear-gradient(135deg,var(--gold),var(--gold-deep)); font-size:1rem;}
 .free{ background:linear-gradient(135deg,var(--gold),var(--gold-deep)); color:#231a00; padding:14px; border-radius:12px; text-align:center; font-weight:800; margin-top:12px; }
 .stats-grid{display:flex; gap:10px; margin-bottom:6px;}
 .stat-box{flex:1; background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:12px 6px; text-align:center;}
@@ -54,7 +55,7 @@ input[type=text],input[type=tel],input[type=password]{ width:100%; padding:14px;
 .stat-label{font-size:.76rem; color:var(--muted); margin-top:2px;}
 .section-title{font-size:.95rem; font-weight:800; margin:4px 0 12px;}
 .bar-row{display:flex; align-items:center; gap:8px; margin-bottom:9px;}
-.bar-label{width:64px; font-size:.82rem; color:var(--muted); flex-shrink:0;}
+.bar-label{width:84px; font-size:.82rem; color:var(--muted); flex-shrink:0;}
 .bar-track{flex:1; height:14px; background:var(--paper); border-radius:7px; overflow:hidden;}
 .bar-fill{height:100%; background:var(--brand); border-radius:7px;}
 .bar-fill.max{background:var(--gold-deep);}
@@ -68,6 +69,8 @@ textarea{width:100%; padding:14px; font-size:1rem; border-radius:12px; border:1p
 .offer-box{background:var(--paper); border:1px dashed var(--brand); border-radius:12px; padding:12px; margin-bottom:14px;}
 .seg-btn{flex:1; padding:12px 6px; border-radius:11px; border:1px solid var(--line); background:var(--paper); color:var(--text); font-size:.92rem; cursor:pointer; font-family:inherit; font-weight:600;}
 .seg-btn.active{background:var(--brand); border-color:var(--brand); color:#fff;}
+.date-row{display:flex; gap:8px; direction:ltr; margin-bottom:4px;}
+.date-row select{flex:1; min-width:0; padding:12px 6px; border-radius:12px; border:1px solid var(--line); background:var(--paper); color:var(--text); font-family:inherit; font-size:1rem;}
 input[type=date]{width:100%; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--paper); color:var(--text); font-family:inherit; font-size:1rem; margin-bottom:4px;}
 .customer-list{max-height:180px; overflow-y:auto; margin-top:6px; direction:ltr; text-align:right;}
 .customer-list div{padding:6px 4px; border-bottom:1px solid var(--line); font-size:.85rem;}
@@ -102,7 +105,7 @@ async function getCurrentOfferText(){
 
 async function syncCardToWallet(phone, cardData){
   const offerText = await getCurrentOfferText();
-  const rem = (cardData.sinceReward||0) % REWARD_EVERY;
+  const rem = Math.min(cardData.sinceReward||0, REWARD_EVERY);
   const body = {
     title: "مغسلة النون",
     label: "رقم الجوال",
@@ -110,7 +113,7 @@ async function syncCardToWallet(phone, cardData){
     barcodeValue: phone,
     barcodeFormat: "QR",
     colorPreset: "orange",
-    secondaryFields: [ { label:"الرصيد", value: loyaltyMessage(rem, false) } ]
+    secondaryFields: [ { label:"الأختام", value: stampsText(rem) }, { label:"الرصيد", value: loyaltyMessage(rem, false) } ]
   };
   if(offerText) body.secondaryFields.push({ label:"عرض اليوم", value: offerText });
 
@@ -133,7 +136,7 @@ async function syncCardToWallet(phone, cardData){
   }
 }
 // ============================================================================
-const AR_WEEKDAYS = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
+const EN_WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
 const fbApp = initializeApp(firebaseConfig);
 const firestore = getFirestore(fbApp);
@@ -149,9 +152,19 @@ function fmtDate(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.ge
 function monthKey(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1); }
 function startOfWeek(d){ const c=new Date(d.getFullYear(),d.getMonth(),d.getDate()); c.setDate(c.getDate()-c.getDay()); return c; }
 function fmtHour(h){ const period = h<12 ? "ص" : "م"; let hh = h%12; if(hh===0) hh=12; return hh+":00 "+period; }
-const AR_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
-function arMonthLabel(mk){ const [y,m] = mk.split("-").map(Number); return AR_MONTHS[m-1]+" "+y; }
-function normalizePhone(raw){ return (raw||"").trim().replace(/[^\d]/g,""); }
+const EN_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+function monthLabel(mk){ const [y,m] = mk.split("-").map(Number); return EN_MONTHS[m-1]+" "+y; }
+function normalizePhone(raw){
+  let p = (raw||"").trim()
+    .replace(/[٠-٩]/g, c => String(c.charCodeAt(0)-0x0660))
+    .replace(/[۰-۹]/g, c => String(c.charCodeAt(0)-0x06F0))
+    .replace(/[^\d]/g,"");
+  if(p.startsWith("00966")) p = "0"+p.slice(5);
+  else if(p.startsWith("966")) p = "0"+p.slice(3);
+  else if(p.length===9 && p.startsWith("5")) p = "0"+p;
+  return p;
+}
+function isValidPhone(p){ return /^05\d{8}$/.test(p); }
 
 function el(html){ const t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstElementChild; }
 
@@ -207,9 +220,19 @@ function renderLogin(){
   return wrap;
 }
 
+// sinceReward: 0..3 — لما يوصل 3 يعني الغسلة الجاية (الرابعة) مجانية
+function stampsText(sinceReward){
+  const n = Math.min(sinceReward||0, REWARD_EVERY);
+  let out = [];
+  for(let i=1;i<=REWARD_EVERY;i++) out.push(i<=n ? "❌" : "⬜");
+  if(n >= REWARD_EVERY) out.push("🎁");
+  return out.join(" ");
+}
+
 function loyaltyMessage(sinceReward, isFree){
   const remaining = isFree ? 0 : (REWARD_EVERY - sinceReward);
   if(isFree) return `🎉 مبروك! هذي الغسلة مجانية`;
+  if(remaining <= 0) return `🎁 مبروك! الغسلة الجاية مجانية`;
   if(remaining === 1) return `ثلاثة زيارات والرابعة مجانًا - متبقي زيارة واحدة لمكافأتك`;
   if(remaining === 2) return `ثلاثة زيارات والرابعة مجانًا - متبقي زيارتين لمكافأتك`;
   return `ثلاثة زيارات والرابعة مجانًا - متبقي ${remaining} زيارات لمكافأتك`;
@@ -218,11 +241,12 @@ function loyaltyMessage(sinceReward, isFree){
 function cardStatusHtml(total, sinceReward, isFree){
   let dotsHtml = "";
   const filled = isFree ? REWARD_EVERY : sinceReward;
-  for(let i=1;i<=REWARD_EVERY;i++) dotsHtml += `<div class="dot ${i<=filled?"filled":""}">${i}</div>`;
+  for(let i=1;i<=REWARD_EVERY;i++) dotsHtml += `<div class="dot ${i<=filled?"filled":""}">${i<=filled?"✕":i}</div>`;
+  if(filled >= REWARD_EVERY) dotsHtml += `<div class="dot gift">🎁</div>`;
   return `
     <p class="center muted">إجمالي الزيارات: ${total}</p>
     <div class="dots">${dotsHtml}</div>
-    ${isFree ? `<div class="free">${loyaltyMessage(sinceReward,true)}</div>` : `<p class="center muted">${loyaltyMessage(sinceReward,false)}</p>`}
+    ${isFree || sinceReward >= REWARD_EVERY ? `<div class="free">${loyaltyMessage(sinceReward,isFree)}</div>` : `<p class="center muted">${loyaltyMessage(sinceReward,false)}</p>`}
   `;
 }
 
@@ -285,8 +309,8 @@ function renderWorker(){
 
         <label class="field-label">نوع الغسلة</label>
         <div class="seg" id="typeSeg" style="display:flex; gap:8px; margin-bottom:16px;">
-          <button class="seg-btn active" data-v="داخلي">داخلي</button>
-          <button class="seg-btn" data-v="داخلي وخارجي">داخلي وخارجي</button>
+          <button class="seg-btn active" data-v="خارجي">خارجي</button>
+          <button class="seg-btn" data-v="خارجي وداخلي">خارجي وداخلي</button>
         </div>
 
         <button class="big-btn" id="submit">تسجيل الغسلة</button>
@@ -321,6 +345,7 @@ function renderWorker(){
   btn.onclick = () => {
     const phone = normalizePhone(phoneInput.value);
     if(!phone){ resultBox.innerHTML = `<p class="err">أدخل رقم الجوال</p>`; return; }
+    if(!isValidPhone(phone)){ resultBox.innerHTML = `<p class="err">رقم الجوال لازم يكون 10 أرقام ويبدأ بـ 05</p>`; return; }
     resultBox.innerHTML = "";
     const size = getSize(), type = getType();
     confirmArea.innerHTML = `
@@ -372,16 +397,34 @@ function renderWorker(){
   lookupBtn.onclick = async () => {
     const phone = normalizePhone(wrap.querySelector("#lookupPhone").value);
     if(!phone){ lookupResult.innerHTML = `<p class="err">أدخل رقم الجوال</p>`; return; }
+    if(!isValidPhone(phone)){ lookupResult.innerHTML = `<p class="err">رقم الجوال لازم يكون 10 أرقام ويبدأ بـ 05</p>`; return; }
     lookupBtn.disabled = true; lookupBtn.textContent = "جاري البحث...";
     try{
       const snap = await getDoc(doc(firestore,"cards",phone));
       if(!snap.exists()){ lookupResult.innerHTML = `<p class="muted center">ما فيه سجل لهذا الرقم بعد.</p>`; }
-      else{ const d = snap.data(); lookupResult.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(d.total||0, d.sinceReward||0, false); }
+      else{ const d = snap.data(); lookupResult.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(d.total||0, d.sinceReward||0, false) + (d.wwShareLink ? walletDirectQrHtml(d.wwShareLink) : ""); }
     }catch(e){ lookupResult.innerHTML = `<p class="err">تعذر البحث</p>`; }
     lookupBtn.disabled = false; lookupBtn.textContent = "استعلام";
   };
   return wrap;
 }
+
+function yearOptions(selected){
+  const now = new Date().getFullYear(); let o = "";
+  for(let y=now; y>=now-3; y--) o += `<option value="${y}" ${y===selected?"selected":""}>${y}</option>`;
+  return o;
+}
+function monthOptions(selected){ return EN_MONTHS.map((m,i)=>`<option value="${i+1}" ${i+1===selected?"selected":""}>${m}</option>`).join(""); }
+function daySelectsHtml(){
+  const now = new Date(); let days = `<option value="">Day</option>`;
+  for(let d=1; d<=31; d++) days += `<option value="${d}">${d}</option>`;
+  return `<select data-p="d">${days}</select><select data-p="m">${monthOptions(now.getMonth()+1)}</select><select data-p="y">${yearOptions(now.getFullYear())}</select>`;
+}
+function monthSelectsHtml(mk){
+  const [y,m] = mk.split("-").map(Number);
+  return `<select data-p="m">${monthOptions(m)}</select><select data-p="y">${yearOptions(y)}</select>`;
+}
+function readDateRow(row){ const v = {}; row.querySelectorAll("select").forEach(s => v[s.dataset.p] = s.value); return v; }
 
 function renderOwner(){
   const defaultMonthValue = monthKey(new Date());
@@ -401,13 +444,13 @@ function renderOwner(){
 
       <div class="card">
         <label class="field-label">يوم محدد</label>
-        <input type="date" id="dayFilter">
+        <div class="date-row" id="dayFilter">${daySelectsHtml()}</div>
         <div id="dayResult" style="margin-top:8px"></div>
       </div>
 
       <div class="card">
         <label class="field-label">الشهر</label>
-        <input type="month" id="monthFilter" value="${defaultMonthValue}">
+        <div class="date-row" id="monthFilter">${monthSelectsHtml(defaultMonthValue)}</div>
       </div>
       <div id="ownerBody"><p class="muted center">جاري التحميل...</p></div>
     </div>
@@ -458,10 +501,10 @@ async function bindOfferComposer(wrap){
 }
 
 function buildDistributionReport(cardsDocs){
-  const buckets = { 0:[], 1:[], 2:[] };
+  const buckets = { 0:[], 1:[], 2:[], 3:[] };
   cardsDocs.forEach(d => {
     const v = d.data();
-    const s = (v.sinceReward||0) % REWARD_EVERY;
+    const s = Math.min(v.sinceReward||0, REWARD_EVERY);
     if(buckets[s]) buckets[s].push(d.id);
   });
   const listHtml = (arr) => arr.length
@@ -470,13 +513,15 @@ function buildDistributionReport(cardsDocs){
 
   return `
     <table class="dist-table">
-      <tr><td>عملاء بزيارتين (غسلتهم الجاية مجانية)</td><td>${buckets[2].length}</td></tr>
+      <tr><td>عملاء بثلاث زيارات (غسلتهم الجاية مجانية)</td><td>${buckets[3].length}</td></tr>
+      <tr><td>عملاء بزيارتين</td><td>${buckets[2].length}</td></tr>
       <tr><td>عملاء بزيارة واحدة</td><td>${buckets[1].length}</td></tr>
       <tr><td>عملاء بلا زيارات حالية (بدأوا من جديد)</td><td>${buckets[0].length}</td></tr>
     </table>
     <details style="margin-top:8px">
       <summary class="muted" style="cursor:pointer">عرض القوائم بالأرقام</summary>
-      <p class="muted" style="margin:8px 0 2px">زيارتين (قريبين من المجانية):</p>${listHtml(buckets[2])}
+      <p class="muted" style="margin:8px 0 2px">ثلاث زيارات (الجاية مجانية):</p>${listHtml(buckets[3])}
+      <p class="muted" style="margin:8px 0 2px">زيارتين:</p>${listHtml(buckets[2])}
       <p class="muted" style="margin:8px 0 2px">زيارة واحدة:</p>${listHtml(buckets[1])}
       <p class="muted" style="margin:8px 0 2px">بلا زيارات حالية:</p>${listHtml(buckets[0])}
     </details>
@@ -484,7 +529,7 @@ function buildDistributionReport(cardsDocs){
 }
 
 function buildTypeSizeBreakdown(docs){
-  const t = { "داخلي":0, "داخلي وخارجي":0 };
+  const t = { "خارجي":0, "خارجي وداخلي":0, "داخلي":0, "داخلي وخارجي":0 };
   const s = { "سيدان":0, "وسط":0, "كبيرة":0 };
   docs.forEach(d => {
     const v = d.data ? d.data() : d;
@@ -493,8 +538,10 @@ function buildTypeSizeBreakdown(docs){
   });
   return `
     <table class="dist-table">
-      <tr><td>داخلي</td><td>${t["داخلي"]}</td></tr>
-      <tr><td>داخلي وخارجي</td><td>${t["داخلي وخارجي"]}</td></tr>
+      <tr><td>خارجي</td><td>${t["خارجي"]}</td></tr>
+      <tr><td>خارجي وداخلي</td><td>${t["خارجي وداخلي"]}</td></tr>
+      ${t["داخلي"] ? `<tr><td>داخلي (تسجيل قديم)</td><td>${t["داخلي"]}</td></tr>` : ""}
+      ${t["داخلي وخارجي"] ? `<tr><td>داخلي وخارجي (تسجيل قديم)</td><td>${t["داخلي وخارجي"]}</td></tr>` : ""}
       <tr><td>سيدان</td><td>${s["سيدان"]}</td></tr>
       <tr><td>وسط</td><td>${s["وسط"]}</td></tr>
       <tr><td>كبيرة</td><td>${s["كبيرة"]}</td></tr>
@@ -528,9 +575,12 @@ async function loadOwnerStats(wrap){
 
     const dayFilter = wrap.querySelector("#dayFilter");
     const dayResult = wrap.querySelector("#dayResult");
-    dayFilter.onchange = async (e) => {
-      const dk = e.target.value;
-      if(!dk){ dayResult.innerHTML = ""; return; }
+    dayFilter.onchange = async () => {
+      const v = readDateRow(dayFilter);
+      if(!v.d){ dayResult.innerHTML = ""; return; }
+      const picked = new Date(Number(v.y), Number(v.m)-1, Number(v.d));
+      if(picked.getMonth() !== Number(v.m)-1){ dayResult.innerHTML = `<p class="err center">هذا التاريخ غير موجود</p>`; return; }
+      const dk = fmtDate(picked);
       dayResult.innerHTML = `<p class="muted center">جاري التحميل...</p>`;
       try{
         const daySnap = await getDocs(query(visitsCol, where("dateKey","==",dk)));
@@ -549,20 +599,20 @@ async function loadOwnerStats(wrap){
       docs.forEach(d => { const v=d.data(); if(typeof v.weekday==="number") weekdayCounts[v.weekday]++; if(typeof v.hour==="number") hourCounts[v.hour]++; });
       const maxWeekday = Math.max(1, ...weekdayCounts);
       let weekdayRows = "";
-      weekdayCounts.forEach((c,i) => { const pct=Math.round((c/maxWeekday)*100); weekdayRows += `<div class="bar-row"><span class="bar-label">${AR_WEEKDAYS[i]}</span><div class="bar-track"><div class="bar-fill ${c===maxWeekday&&c>0?"max":""}" style="width:${pct}%"></div></div><span class="bar-value">${c}</span></div>`; });
+      weekdayCounts.forEach((c,i) => { const pct=Math.round((c/maxWeekday)*100); weekdayRows += `<div class="bar-row"><span class="bar-label">${EN_WEEKDAYS[i]}</span><div class="bar-track"><div class="bar-fill ${c===maxWeekday&&c>0?"max":""}" style="width:${pct}%"></div></div><span class="bar-value">${c}</span></div>`; });
       const topHours = hourCounts.map((c,h)=>({h,c})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c).slice(0,5);
       const maxHour = topHours.length?topHours[0].c:1;
       let hourRows = topHours.length ? "" : `<p class="muted center">لا توجد بيانات كافية لهذا الشهر</p>`;
       topHours.forEach((x,i)=>{ const pct=Math.round((x.c/maxHour)*100); hourRows += `<div class="bar-row"><span class="bar-label">${fmtHour(x.h)}</span><div class="bar-track"><div class="bar-fill ${i===0?"max":""}" style="width:${pct}%"></div></div><span class="bar-value">${x.c}</span></div>`; });
-      const monthLabel = arMonthLabel(currentMonth);
+      const monthName = monthLabel(currentMonth);
 
       body.innerHTML = `
         <div class="card">
-          <p class="section-title">التقرير اليومي (يتصفر كل يوم فجرًا)</p>
+          <p class="section-title">التقرير اليومي (يبدأ من جديد كل يوم 12 بالليل)</p>
           <div class="stats-grid">
             <div class="stat-box"><div class="stat-num">${todayCount}</div><div class="stat-label">اليوم</div></div>
             <div class="stat-box"><div class="stat-num">${weekTotal}</div><div class="stat-label">هذا الأسبوع</div></div>
-            <div class="stat-box"><div class="stat-num">${monthTotal}</div><div class="stat-label">${monthLabel}</div></div>
+            <div class="stat-box"><div class="stat-num">${monthTotal}</div><div class="stat-label">${monthName}</div></div>
           </div>
           <p class="muted center" style="margin:8px 0 0">عدد العملاء المسجلين في نظام الولاء: ${totalCards}</p>
           <p class="section-title" style="margin-top:14px">تفاصيل اليوم</p>
@@ -572,22 +622,25 @@ async function loadOwnerStats(wrap){
           <p class="section-title">توزيع العملاء حسب عدد الزيارات</p>
           ${distributionHtml}
         </div>
-        <div class="card"><p class="section-title">الأيام الأكثر ازدحامًا (${monthLabel})</p>${weekdayRows}</div>
-        <div class="card"><p class="section-title">أكثر 5 ساعات ازدحامًا (${monthLabel})</p>${hourRows}</div>
+        <div class="card"><p class="section-title">الأيام الأكثر ازدحامًا (${monthName})</p>${weekdayRows}</div>
+        <div class="card"><p class="section-title">أكثر 5 ساعات ازدحامًا (${monthName})</p>${hourRows}</div>
       `;
     };
     renderMonthPart();
 
-    wrap.querySelector("#monthFilter").onchange = async (e) => {
-      const mk = e.target.value;
-      if(!mk) return;
+    const monthFilter = wrap.querySelector("#monthFilter");
+    monthFilter.onchange = async () => {
+      const v = readDateRow(monthFilter);
+      const mk = v.y + "-" + pad(Number(v.m));
       currentMonth = mk;
       if(!monthCache[mk]){
-        body.innerHTML = `<p class="muted center">جاري تحميل بيانات ${arMonthLabel(mk)}...</p>`;
-        const snap = await getDocs(query(visitsCol, where("month","==",mk)));
-        monthCache[mk] = snap.docs;
+        body.innerHTML = `<p class="muted center">جاري تحميل بيانات ${monthLabel(mk)}...</p>`;
+        try{
+          const snap = await getDocs(query(visitsCol, where("month","==",mk)));
+          monthCache[mk] = snap.docs;
+        }catch(e){ body.innerHTML = `<p class="err center">تعذر التحميل: ${(e && e.code) || "غير معروف"}</p>`; return; }
       }
-      renderMonthPart();
+      if(currentMonth === mk) renderMonthPart();
     };
   }catch(e){
     body.innerHTML = `<p class="err">تعذر تحميل الإحصائيات: ${(e && e.code) || "غير معروف"}</p>`;
