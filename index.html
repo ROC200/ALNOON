@@ -66,6 +66,11 @@ textarea{width:100%; padding:14px; font-size:1rem; border-radius:12px; border:1p
 .dist-table td{padding:8px 6px; border-bottom:1px solid var(--line); font-size:.9rem;}
 .dist-table td:last-child{text-align:left; font-weight:800; color:var(--brand);}
 .offer-box{background:var(--paper); border:1px dashed var(--brand); border-radius:12px; padding:12px; margin-bottom:14px;}
+.seg-btn{flex:1; padding:12px 6px; border-radius:11px; border:1px solid var(--line); background:var(--paper); color:var(--text); font-size:.92rem; cursor:pointer; font-family:inherit; font-weight:600;}
+.seg-btn.active{background:var(--brand); border-color:var(--brand); color:#fff;}
+input[type=date]{width:100%; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--paper); color:var(--text); font-family:inherit; font-size:1rem; margin-bottom:4px;}
+.customer-list{max-height:180px; overflow-y:auto; margin-top:6px; direction:ltr; text-align:right;}
+.customer-list div{padding:6px 4px; border-bottom:1px solid var(--line); font-size:.85rem;}
 </style>
 </head>
 <body>
@@ -112,9 +117,12 @@ async function syncCardToWallet(phone, cardData){
   if(!cardData.wwSerial){
     const res = await fetch(`${WW_BASE}/api/passes`, { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${WW_API_KEY}` }, body: JSON.stringify(body) });
     const data = await res.json();
-    await setDoc(doc(firestore,"cards",phone), { wwSerial: data.serial, wwShareLink: data.shareLink||data.url||data.link, walletAdded:true }, { merge:true });
+    const shareLink = data.shareLink||data.url||data.link;
+    await setDoc(doc(firestore,"cards",phone), { wwSerial: data.serial, wwShareLink: shareLink, walletAdded:true }, { merge:true });
+    return shareLink;
   }else{
     await fetch(`${WW_BASE}/api/passes/${cardData.wwSerial}`, { method:"PUT", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${WW_API_KEY}` }, body: JSON.stringify(body) });
+    return cardData.wwShareLink || null;
   }
 }
 // ============================================================================
@@ -223,6 +231,17 @@ function customerLinkHtml(phone){
   `;
 }
 
+function walletDirectQrHtml(shareLink){
+  const qrImg = "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=" + encodeURIComponent(shareLink);
+  return `
+    <div class="card" style="margin-top:12px; text-align:center;">
+      <p class="section-title" style="text-align:center">أضف البطاقة إلى Wallet</p>
+      <img src="${qrImg}" alt="QR" style="width:180px; height:180px; margin:0 auto; display:block;">
+      <p class="muted" style="margin-top:8px">اطلب من العميل يصوّر هذا الرمز — يضيفها للـ Wallet مباشرة</p>
+    </div>
+  `;
+}
+
 async function renderCustomerView(phone){
   const app = document.getElementById("app");
   app.innerHTML = `<div class="login-wrap"><div class="card center" style="width:100%"><p class="muted center">جاري التحميل...</p></div></div>`;
@@ -248,6 +267,20 @@ function renderWorker(){
       <div class="card">
         <label class="field-label">رقم جوال العميل</label>
         <input type="tel" id="phone" placeholder="05XXXXXXXX" autocomplete="off">
+
+        <label class="field-label">حجم السيارة</label>
+        <div class="seg" id="sizeSeg" style="display:flex; gap:8px; margin-bottom:16px;">
+          <button class="seg-btn active" data-v="سيدان">سيدان</button>
+          <button class="seg-btn" data-v="وسط">وسط</button>
+          <button class="seg-btn" data-v="كبيرة">كبيرة</button>
+        </div>
+
+        <label class="field-label">نوع الغسلة</label>
+        <div class="seg" id="typeSeg" style="display:flex; gap:8px; margin-bottom:16px;">
+          <button class="seg-btn active" data-v="داخلي">داخلي</button>
+          <button class="seg-btn" data-v="داخلي وخارجي">داخلي وخارجي</button>
+        </div>
+
         <button class="big-btn" id="submit">تسجيل الغسلة</button>
         <div id="confirmArea"></div>
         <div id="result"></div>
@@ -267,14 +300,26 @@ function renderWorker(){
   const resultBox = wrap.querySelector("#result");
   const phoneInput = wrap.querySelector("#phone");
 
+  function bindSeg(segId){
+    const seg = wrap.querySelector(segId);
+    seg.querySelectorAll(".seg-btn").forEach(b => {
+      b.onclick = () => { seg.querySelectorAll(".seg-btn").forEach(x=>x.classList.remove("active")); b.classList.add("active"); };
+    });
+    return () => seg.querySelector(".seg-btn.active").dataset.v;
+  }
+  const getSize = bindSeg("#sizeSeg");
+  const getType = bindSeg("#typeSeg");
+
   btn.onclick = () => {
     const phone = normalizePhone(phoneInput.value);
     if(!phone){ resultBox.innerHTML = `<p class="err">أدخل رقم الجوال</p>`; return; }
     resultBox.innerHTML = "";
+    const size = getSize(), type = getType();
     confirmArea.innerHTML = `
       <div class="card" style="background:var(--paper); margin-top:12px;">
         <p class="center muted" style="margin-top:0">تأكيد قبل التسجيل</p>
         <div class="phone-display">${phone}</div>
+        <p class="center muted">${size} · ${type}</p>
         <div class="confirm-row">
           <button class="big-btn" id="confirmYes" style="flex:1">تأكيد وتسجيل</button>
           <button class="btn-secondary" id="confirmNo">تعديل</button>
@@ -286,22 +331,24 @@ function renderWorker(){
       yesBtn.disabled = true; yesBtn.textContent = "جاري التسجيل...";
       try{
         const now = new Date();
-        const visitData = { phone, dateKey: fmtDate(now), month: monthKey(now), weekday: now.getDay(), hour: now.getHours(), ts: now.toISOString() };
+        const visitData = { phone, carSize:size, washType:type, dateKey: fmtDate(now), month: monthKey(now), weekday: now.getDay(), hour: now.getHours(), ts: now.toISOString() };
         await addDoc(collection(firestore,"visits"), visitData);
 
         const cardRef = doc(firestore,"cards",phone);
         const snap = await getDoc(cardRef);
         const prev = snap.exists() ? snap.data() : {};
+        const prevSince = prev.sinceReward || 0;
         let total = (prev.total||0)+1;
-        let sinceReward = (prev.sinceReward||0)+1;
-        let isFree = false;
-        if(sinceReward >= REWARD_EVERY){ isFree = true; sinceReward = 0; }
+        let sinceReward, isFree;
+        if(prevSince >= REWARD_EVERY){ isFree = true; sinceReward = 0; } // هذي الزيارة نفسها مجانية (بعد 3 مدفوعة)
+        else { isFree = false; sinceReward = prevSince + 1; }
         await setDoc(cardRef, { phone, total, sinceReward, lastVisit: visitData.ts }, { merge: true });
 
-        try{ await syncCardToWallet(phone, { total, sinceReward, wwSerial: prev.wwSerial }); }
+        let shareLink = null;
+        try{ shareLink = await syncCardToWallet(phone, { total, sinceReward, wwSerial: prev.wwSerial, wwShareLink: prev.wwShareLink }); }
         catch(e){ console.error("WalletWallet sync failed", e); }
 
-        resultBox.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(total, sinceReward, isFree) + customerLinkHtml(phone);
+        resultBox.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(total, sinceReward, isFree) + (shareLink ? walletDirectQrHtml(shareLink) : customerLinkHtml(phone));
         phoneInput.value = "";
       }catch(e){
         resultBox.innerHTML = `<p class="err">حدث خطأ أثناء التسجيل: ${(e && e.code) || "غير معروف"}</p>`;
@@ -343,7 +390,13 @@ function renderOwner(){
       </div>
 
       <div class="card">
-        <label class="field-label">التاريخ</label>
+        <label class="field-label">يوم محدد</label>
+        <input type="date" id="dayFilter">
+        <div id="dayResult" style="margin-top:8px"></div>
+      </div>
+
+      <div class="card">
+        <label class="field-label">الشهر</label>
         <input type="month" id="monthFilter" value="${defaultMonthValue}">
       </div>
       <div id="ownerBody"><p class="muted center">جاري التحميل...</p></div>
@@ -395,17 +448,46 @@ async function bindOfferComposer(wrap){
 }
 
 function buildDistributionReport(cardsDocs){
-  const buckets = { 0:0, 1:0, 2:0 };
+  const buckets = { 0:[], 1:[], 2:[] };
   cardsDocs.forEach(d => {
     const v = d.data();
     const s = (v.sinceReward||0) % REWARD_EVERY;
-    if(buckets[s] !== undefined) buckets[s]++;
+    if(buckets[s]) buckets[s].push(d.id);
+  });
+  const listHtml = (arr) => arr.length
+    ? `<div class="customer-list">${arr.map(p=>`<div>${p}</div>`).join("")}</div>`
+    : `<p class="muted" style="margin:6px 0 0">لا يوجد</p>`;
+
+  return `
+    <table class="dist-table">
+      <tr><td>عملاء بزيارتين (غسلتهم الجاية مجانية)</td><td>${buckets[2].length}</td></tr>
+      <tr><td>عملاء بزيارة واحدة</td><td>${buckets[1].length}</td></tr>
+      <tr><td>عملاء بلا زيارات حالية (بدأوا من جديد)</td><td>${buckets[0].length}</td></tr>
+    </table>
+    <details style="margin-top:8px">
+      <summary class="muted" style="cursor:pointer">عرض القوائم بالأرقام</summary>
+      <p class="muted" style="margin:8px 0 2px">زيارتين (قريبين من المجانية):</p>${listHtml(buckets[2])}
+      <p class="muted" style="margin:8px 0 2px">زيارة واحدة:</p>${listHtml(buckets[1])}
+      <p class="muted" style="margin:8px 0 2px">بلا زيارات حالية:</p>${listHtml(buckets[0])}
+    </details>
+  `;
+}
+
+function buildTypeSizeBreakdown(docs){
+  const t = { "داخلي":0, "داخلي وخارجي":0 };
+  const s = { "سيدان":0, "وسط":0, "كبيرة":0 };
+  docs.forEach(d => {
+    const v = d.data ? d.data() : d;
+    if(t[v.washType] !== undefined) t[v.washType]++;
+    if(s[v.carSize] !== undefined) s[v.carSize]++;
   });
   return `
     <table class="dist-table">
-      <tr><td>عملاء بزيارة واحدة</td><td>${buckets[1]}</td></tr>
-      <tr><td>عملاء بزيارتين (غسلتهم الجاية مجانية)</td><td>${buckets[2]}</td></tr>
-      <tr><td>عملاء بلا زيارات حالية (بدأوا من جديد)</td><td>${buckets[0]}</td></tr>
+      <tr><td>داخلي</td><td>${t["داخلي"]}</td></tr>
+      <tr><td>داخلي وخارجي</td><td>${t["داخلي وخارجي"]}</td></tr>
+      <tr><td>سيدان</td><td>${s["سيدان"]}</td></tr>
+      <tr><td>وسط</td><td>${s["وسط"]}</td></tr>
+      <tr><td>كبيرة</td><td>${s["كبيرة"]}</td></tr>
     </table>
   `;
 }
@@ -429,9 +511,26 @@ async function loadOwnerStats(wrap){
     ]);
 
     const todayCount = todaySnap.size, weekTotal = weekSnap.size, totalCards = cardsSnap.size;
+    const todayBreakdownHtml = buildTypeSizeBreakdown(todaySnap.docs);
     const distributionHtml = buildDistributionReport(cardsSnap.docs);
     const monthCache = { [defaultMonth]: monthSnap.docs };
     let currentMonth = defaultMonth;
+
+    const dayFilter = wrap.querySelector("#dayFilter");
+    const dayResult = wrap.querySelector("#dayResult");
+    dayFilter.onchange = async (e) => {
+      const dk = e.target.value;
+      if(!dk){ dayResult.innerHTML = ""; return; }
+      dayResult.innerHTML = `<p class="muted center">جاري التحميل...</p>`;
+      try{
+        const daySnap = await getDocs(query(visitsCol, where("dateKey","==",dk)));
+        dayResult.innerHTML = `
+          <p class="center" style="font-weight:800; font-size:1.2rem; color:var(--brand)">${daySnap.size}</p>
+          <p class="muted center" style="margin:0 0 8px">إجمالي غسلات هذا اليوم</p>
+          ${buildTypeSizeBreakdown(daySnap.docs)}
+        `;
+      }catch(e){ dayResult.innerHTML = `<p class="err center">تعذر التحميل</p>`; }
+    };
 
     const renderMonthPart = () => {
       const docs = monthCache[currentMonth] || [];
@@ -456,6 +555,8 @@ async function loadOwnerStats(wrap){
             <div class="stat-box"><div class="stat-num">${monthTotal}</div><div class="stat-label">${monthLabel}</div></div>
           </div>
           <p class="muted center" style="margin:8px 0 0">عدد العملاء المسجلين في نظام الولاء: ${totalCards}</p>
+          <p class="section-title" style="margin-top:14px">تفاصيل اليوم</p>
+          ${todayBreakdownHtml}
         </div>
         <div class="card">
           <p class="section-title">توزيع العملاء حسب عدد الزيارات</p>
