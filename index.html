@@ -114,15 +114,22 @@ async function syncCardToWallet(phone, cardData){
   };
   if(offerText) body.secondaryFields.push({ label:"عرض اليوم", value: offerText });
 
+  const headers = { "Content-Type":"application/json", "Authorization":`Bearer ${WW_API_KEY}` };
   if(!cardData.wwSerial){
-    const res = await fetch(`${WW_BASE}/api/passes`, { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${WW_API_KEY}` }, body: JSON.stringify(body) });
-    const data = await res.json();
-    const shareLink = data.shareLink||data.url||data.link;
-    await setDoc(doc(firestore,"cards",phone), { wwSerial: data.serial, wwShareLink: shareLink, walletAdded:true }, { merge:true });
+    const res = await fetch(`${WW_BASE}/api/passes`, { method:"POST", headers, body: JSON.stringify(body) });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(`WalletWallet ${res.status}: ${data.error || data.message || JSON.stringify(data)}`);
+    // WalletWallet يرجّع serialNumber و shareUrl (مو serial / shareLink)
+    const serial = data.serialNumber || data.serial;
+    const shareLink = data.shareUrl || (serial ? `${WW_BASE}/p/${serial}` : null);
+    if(!serial || !shareLink) throw new Error("WalletWallet: الرد ما فيه serialNumber/shareUrl " + JSON.stringify(data));
+    await setDoc(doc(firestore,"cards",phone), { wwSerial: serial, wwShareLink: shareLink, walletAdded:true }, { merge:true });
     return shareLink;
   }else{
-    await fetch(`${WW_BASE}/api/passes/${cardData.wwSerial}`, { method:"PUT", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${WW_API_KEY}` }, body: JSON.stringify(body) });
-    return cardData.wwShareLink || null;
+    const res = await fetch(`${WW_BASE}/api/passes/${cardData.wwSerial}`, { method:"PUT", headers, body: JSON.stringify(body) });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(`WalletWallet ${res.status}: ${data.error || data.message || JSON.stringify(data)}`);
+    return data.shareUrl || cardData.wwShareLink || `${WW_BASE}/p/${cardData.wwSerial}`;
   }
 }
 // ============================================================================
@@ -238,6 +245,7 @@ function walletDirectQrHtml(shareLink){
       <p class="section-title" style="text-align:center">أضف البطاقة إلى Wallet</p>
       <img src="${qrImg}" alt="QR" style="width:180px; height:180px; margin:0 auto; display:block;">
       <p class="muted" style="margin-top:8px">اطلب من العميل يصوّر هذا الرمز — يضيفها للـ Wallet مباشرة</p>
+      <a href="${shareLink}" target="_blank" rel="noopener" class="muted" style="word-break:break-all">${shareLink}</a>
     </div>
   `;
 }
@@ -344,11 +352,13 @@ function renderWorker(){
         else { isFree = false; sinceReward = prevSince + 1; }
         await setDoc(cardRef, { phone, total, sinceReward, lastVisit: visitData.ts }, { merge: true });
 
-        let shareLink = null;
+        let shareLink = null, walletErr = "";
         try{ shareLink = await syncCardToWallet(phone, { total, sinceReward, wwSerial: prev.wwSerial, wwShareLink: prev.wwShareLink }); }
-        catch(e){ console.error("WalletWallet sync failed", e); }
+        catch(e){ console.error("WalletWallet sync failed", e); walletErr = (e && e.message) || "خطأ غير معروف"; }
 
-        resultBox.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(total, sinceReward, isFree) + (shareLink ? walletDirectQrHtml(shareLink) : customerLinkHtml(phone));
+        resultBox.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(total, sinceReward, isFree)
+          + (shareLink ? walletDirectQrHtml(shareLink)
+             : `<p class="err center">تعذر إنشاء بطاقة Wallet: ${walletErr.replace(/</g,"&lt;")}</p>` + customerLinkHtml(phone));
         phoneInput.value = "";
       }catch(e){
         resultBox.innerHTML = `<p class="err">حدث خطأ أثناء التسجيل: ${(e && e.code) || "غير معروف"}</p>`;
