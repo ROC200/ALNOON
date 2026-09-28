@@ -98,10 +98,12 @@ const REWARD_EVERY = 3; // كل 3 زيارات، الرابعة مجانية
 const WW_API_KEY = "ww_live_0bbff023742852f5ad3a93e5eca84254";
 const WW_BASE = "https://api.walletwallet.dev";
 const STORE_MAPS_URL = "https://maps.app.goo.gl/WS8JH4buvnsDgY8fA";
-// أيقونة الإشعار (برتقالي وحرف ن أبيض) — ملف icon.png جنب هذي الصفحة.
+// أيقونة الإشعار (برتقالي وحرف ن أبيض) — ملف icon.png في المستودع.
 // الصور من ميزات Pro في WalletWallet؛ لو رفضها الحساب، البطاقة تنرسل بدون الأيقونة تلقائيًا.
 const USE_BRAND_ICON = true;
-const BRAND_ICON_URL = new URL("icon.png", location.href).href;
+// لازم رابط https — نستخدم الملف من GitHub مباشرة عشان يشتغل مهما كان رابط الموقع
+const BRAND_ICON_URL = "https://raw.githubusercontent.com/ROC200/ALNOON/main/icon.png";
+let lastIconError = ""; // سبب رفض الأيقونة (لو صار) عشان يطلع للمستخدم
 
 async function getCurrentOfferText(){
   try{ const snap = await getDoc(doc(firestore,"settings","currentOffer")); return snap.exists() ? (snap.data().text||"") : ""; }
@@ -137,8 +139,11 @@ async function syncCardToWallet(phone, cardData){
   const headers = { "Content-Type":"application/json", "Authorization":`Bearer ${WW_API_KEY}` };
   // يرسل الطلب، ولو فشل بسبب الأيقونة (مثلاً انتهت التجربة) يعيده بدونها
   const send = async (url, method) => {
+    lastIconError = "";
     let res = await fetch(url, { method, headers, body: JSON.stringify(body) });
     if(!res.ok && body.iconURL){
+      const why = await res.clone().json().catch(()=>({}));
+      lastIconError = `WalletWallet ${res.status}: ${why.error || why.message || JSON.stringify(why)}`;
       delete body.iconURL;
       res = await fetch(url, { method, headers, body: JSON.stringify(body) });
     }
@@ -407,7 +412,8 @@ function renderWorker(){
         try{ shareLink = await syncCardToWallet(phone, { total, sinceReward, wwSerial: prev.wwSerial, wwShareLink: prev.wwShareLink }); }
         catch(e){ console.error("WalletWallet sync failed", e); walletErr = (e && e.message) || "خطأ غير معروف"; }
 
-        resultBox.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(total, sinceReward, isFree)
+        const iconNote = lastIconError ? `<p class="muted center">⚠️ الأيقونة ما انقبلت (${lastIconError.replace(/</g,"&lt;")}) — <a href="${BRAND_ICON_URL}" target="_blank" rel="noopener">افتح رابط الأيقونة</a></p>` : "";
+        resultBox.innerHTML = `<div class="phone-display">${phone}</div>` + cardStatusHtml(total, sinceReward, isFree) + iconNote
           + (shareLink ? walletDirectQrHtml(shareLink)
              : `<p class="err center">تعذر إنشاء بطاقة Wallet: ${walletErr.replace(/</g,"&lt;")}</p>` + customerLinkHtml(phone));
         phoneInput.value = "";
@@ -519,7 +525,8 @@ async function bindOfferComposer(wrap){
       await Promise.all(withWallet.map(d => syncCardToWallet(d.id, d.data()).then(()=>done++).catch(e=>{ console.error("broadcast failed for", d.id, e); errors.push((e && e.message) || "خطأ غير معروف"); })));
 
       offerMsg.innerHTML = `<p class="muted center" style="margin-top:8px">${errors.length ? "⚠️" : "✅"} تم النشر — تحدثت ${done} من ${withWallet.length} بطاقة</p>`
-        + (errors.length ? `<p class="err center">سبب الفشل: ${errors[0].replace(/</g,"&lt;")}</p>` : "");
+        + (errors.length ? `<p class="err center">سبب الفشل: ${errors[0].replace(/</g,"&lt;")}</p>` : "")
+        + (lastIconError ? `<p class="muted center">⚠️ الأيقونة ما انقبلت (${lastIconError.replace(/</g,"&lt;")}) — <a href="${BRAND_ICON_URL}" target="_blank" rel="noopener">افتح رابط الأيقونة</a></p>` : "");
     }catch(e){
       offerMsg.innerHTML = `<p class="err">تعذر النشر: ${(e && e.code) || "غير معروف"}</p>`;
     }
