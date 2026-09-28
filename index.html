@@ -97,6 +97,10 @@ const REWARD_EVERY = 3; // كل 3 زيارات، الرابعة مجانية
 // ====== WalletWallet — يتصل مباشرة من المتصفح (بدون Cloud Functions) ======
 const WW_API_KEY = "ww_live_0bbff023742852f5ad3a93e5eca84254";
 const WW_BASE = "https://api.walletwallet.dev";
+const STORE_MAPS_URL = "https://maps.app.goo.gl/WS8JH4buvnsDgY8fA";
+// أيقونة الإشعار (برتقالي وحرف ن أبيض) — ملف icon.png جنب هذي الصفحة. الصور تحتاج باقة Pro في WalletWallet، فعّلها بعد الاشتراك.
+const USE_BRAND_ICON = false;
+const BRAND_ICON_URL = new URL("icon.png", location.href).href;
 
 async function getCurrentOfferText(){
   try{ const snap = await getDoc(doc(firestore,"settings","currentOffer")); return snap.exists() ? (snap.data().text||"") : ""; }
@@ -106,16 +110,28 @@ async function getCurrentOfferText(){
 async function syncCardToWallet(phone, cardData){
   const offerText = await getCurrentOfferText();
   const rem = Math.min(cardData.sinceReward||0, REWARD_EVERY);
+  // شكل البطاقة: سيارة صغيرة فوق "مغسلة النون" الكبير، تحته الأختام والمكافأة والعرض، وخلف البطاقة رابط الموقع
   const body = {
-    title: "مغسلة النون",
-    label: "رقم الجوال",
-    value: phone,
+    title: "مغسلة النون", // يطلع فوق البطاقة وعنوان الإشعار
+    organizationName: "مغسلة النون 🚗", // اسم المرسل في الإشعار
+    label: "🚗",
+    value: "مغسلة النون",
     barcodeValue: phone,
     barcodeFormat: "QR",
     colorPreset: "orange",
-    secondaryFields: [ { label:"الأختام", value: stampsText(rem) }, { label:"الرصيد", value: loyaltyMessage(rem, false) } ]
+    // changeMessage: لما يتغير الحقل يطلع إشعار على جوال العميل بالنص الجديد (%@ = القيمة)
+    secondaryFields: [
+      { label:"الأختام", value: stampsText(rem) },
+      { label:"الرصيد", value: loyaltyMessage(rem, false), changeMessage: "%@" },
+      { label:"عرض اليوم", value: offerText || "لا يوجد عرض حاليًا", changeMessage: "%@" }
+    ],
+    backFields: [
+      { label:"📍 موقع المغسلة", value: STORE_MAPS_URL },
+      { label:"نظام الولاء", value: "ثلاثة زيارات والرابعة مجانًا 🎁" }
+    ]
   };
-  if(offerText) body.secondaryFields.push({ label:"عرض اليوم", value: offerText });
+
+  if(USE_BRAND_ICON) body.iconURL = BRAND_ICON_URL;
 
   const headers = { "Content-Type":"application/json", "Authorization":`Bearer ${WW_API_KEY}` };
   if(!cardData.wwSerial){
@@ -489,10 +505,11 @@ async function bindOfferComposer(wrap){
 
       const cardsSnap = await getDocs(collection(firestore,"cards"));
       const withWallet = cardsSnap.docs.filter(d => d.data().wwSerial);
-      let done = 0;
-      await Promise.all(withWallet.map(d => syncCardToWallet(d.id, d.data()).then(()=>done++).catch(e=>console.error("broadcast failed for", d.id, e))));
+      let done = 0; const errors = [];
+      await Promise.all(withWallet.map(d => syncCardToWallet(d.id, d.data()).then(()=>done++).catch(e=>{ console.error("broadcast failed for", d.id, e); errors.push((e && e.message) || "خطأ غير معروف"); })));
 
-      offerMsg.innerHTML = `<p class="muted center" style="margin-top:8px">✅ تم النشر — تحدثت ${done} من ${withWallet.length} بطاقة</p>`;
+      offerMsg.innerHTML = `<p class="muted center" style="margin-top:8px">${errors.length ? "⚠️" : "✅"} تم النشر — تحدثت ${done} من ${withWallet.length} بطاقة</p>`
+        + (errors.length ? `<p class="err center">سبب الفشل: ${errors[0].replace(/</g,"&lt;")}</p>` : "");
     }catch(e){
       offerMsg.innerHTML = `<p class="err">تعذر النشر: ${(e && e.code) || "غير معروف"}</p>`;
     }
@@ -529,19 +546,19 @@ function buildDistributionReport(cardsDocs){
 }
 
 function buildTypeSizeBreakdown(docs){
-  const t = { "خارجي":0, "خارجي وداخلي":0, "داخلي":0, "داخلي وخارجي":0 };
+  const t = { "خارجي":0, "خارجي وداخلي":0 };
+  const legacyType = { "داخلي":"خارجي", "داخلي وخارجي":"خارجي وداخلي" }; // تسجيلات قبل تغيير الأسماء
   const s = { "سيدان":0, "وسط":0, "كبيرة":0 };
   docs.forEach(d => {
     const v = d.data ? d.data() : d;
-    if(t[v.washType] !== undefined) t[v.washType]++;
+    const wt = legacyType[v.washType] || v.washType;
+    if(t[wt] !== undefined) t[wt]++;
     if(s[v.carSize] !== undefined) s[v.carSize]++;
   });
   return `
     <table class="dist-table">
       <tr><td>خارجي</td><td>${t["خارجي"]}</td></tr>
       <tr><td>خارجي وداخلي</td><td>${t["خارجي وداخلي"]}</td></tr>
-      ${t["داخلي"] ? `<tr><td>داخلي (تسجيل قديم)</td><td>${t["داخلي"]}</td></tr>` : ""}
-      ${t["داخلي وخارجي"] ? `<tr><td>داخلي وخارجي (تسجيل قديم)</td><td>${t["داخلي وخارجي"]}</td></tr>` : ""}
       <tr><td>سيدان</td><td>${s["سيدان"]}</td></tr>
       <tr><td>وسط</td><td>${s["وسط"]}</td></tr>
       <tr><td>كبيرة</td><td>${s["كبيرة"]}</td></tr>
